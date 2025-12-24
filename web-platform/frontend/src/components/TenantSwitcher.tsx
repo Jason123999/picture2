@@ -19,9 +19,11 @@ export function TenantSwitcher({
   const listboxValue = selectedTenant ?? undefined;
   return (
     <div className="w-72">
-      <Listbox<Tenant>
+      <Listbox
         value={listboxValue}
-        onChange={(value: Tenant) => onSelect?.(value)}
+        onChange={(value) => {
+          if (value) onSelect?.(value as Tenant);
+        }}
         disabled={disabled}
       >
         <div className="relative mt-1">
