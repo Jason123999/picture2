@@ -4,9 +4,6 @@
 # keep this repo root ignore file
 !.gitignore
 
-# keep vercel monorepo config at repo root
-!vercel.json
-
 # keep only web-platform folder
 !web-platform/
 !web-platform/**

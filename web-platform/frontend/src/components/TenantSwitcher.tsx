@@ -16,9 +16,14 @@ export function TenantSwitcher({
   onSelect?: (tenant: Tenant) => void;
 }) {
   const disabled = tenants.length === 0 || !onSelect;
+  const listboxValue = selectedTenant ?? undefined;
   return (
     <div className="w-72">
-      <Listbox value={selectedTenant} onChange={(value) => onSelect?.(value)} disabled={disabled}>
+      <Listbox<Tenant>
+        value={listboxValue}
+        onChange={(value: Tenant) => onSelect?.(value)}
+        disabled={disabled}
+      >
         <div className="relative mt-1">
           <Listbox.Button className="relative w-full cursor-default rounded-full border border-slate-800 bg-slate-900/60 py-3 pl-5 pr-10 text-left text-sm text-white shadow-sm focus:outline-none">
             <span className="block truncate">

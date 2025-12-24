@@ -1,7 +1,8 @@
 {
+  "version": 2,
   "builds": [
     {
-      "src": "web-platform/frontend/package.json",
+      "src": "web-platform/frontend/next.config.ts",
       "use": "@vercel/next"
     }
   ]
