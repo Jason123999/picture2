@@ -1,0 +1,5 @@
+# Optional dependencies for Supabase storage backend
+supabase>=2.4.0
+
+# If you also need S3-compatible storage in future, you can add:
+# boto3>=1.34.0

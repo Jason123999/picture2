@@ -1,0 +1,20 @@
+# ignore everything by default
+*
+
+# keep this repo root ignore file
+!.gitignore
+
+# keep only web-platform folder
+!web-platform/
+!web-platform/**
+
+# inside web-platform, also ignore common junk
+web-platform/**/.venv/
+web-platform/**/__pycache__/
+web-platform/**/*.pyc
+web-platform/**/node_modules/
+web-platform/**/.next/
+web-platform/**/app.db
+web-platform/**/storage/
+web-platform/**/processed/
+web-platform/**/tmp/

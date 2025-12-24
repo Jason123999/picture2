@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "photo-platform-backend"
+version = "0.1.0"
+description = "Multi-tenant photo processing platform backend"
+authors = [
+  { name = "Photo Platform" }
+]
+requires-python = ">=3.10"
+dependencies = [
+  "fastapi>=0.109.0",
+  "uvicorn[standard]>=0.30.0",
+  "pydantic-settings>=2.1.0",
+  "sqlmodel>=0.0.16",
+  "asyncpg>=0.29.0",
+  "alembic>=1.13.1",
+  "python-multipart>=0.0.9",
+  "aiofiles>=23.2.1",
+  "passlib>=1.7.4",
+  "pyjwt[crypto]>=2.8.0",
+  "python-jose[cryptography]>=3.3.0",
+  "redis>=5.0.1",
+  "httpx>=0.26.0",
+  "boto3>=1.34.0",
+  "python-dotenv>=1.0.0",
+  "supabase>=2.4.0"
+]
+
+[tool.setuptools]
+packages = ["app"]
+
+[project.scripts]
+dev-server = "uvicorn app.main:app --reload"

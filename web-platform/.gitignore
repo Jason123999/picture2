@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+web-platform/.venv/
+
+# Node
+node_modules/
+.next/
+
+# Env
+.env
+.env.local
+
+# Storage (only ignore project output folders, not code folders)
+/storage/
+/processed/
+/tmp/
+
+# OS
+.DS_Store
+Thumbs.db

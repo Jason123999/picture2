@@ -1,0 +1,206 @@
+【项目目标】
+把原来的本地图片处理程序（Python，支持上传图片、自动生成标签、裁剪/圆角、生成PPT并展示）升级为“完全免费/免费额度可用的公网多租户 Web 平台”。
+
+多租户平台要求：
+1) 每个用户/租户拥有独立站点（子域名或自定义域名）。
+2) 复用原有能力：上传图片→自动裁剪/圆角→自动标签→生成 PPT→展示与下载。
+3) 使用现代前端（Next.js/React）+ Python 后端（FastAPI）。
+4) 采用零成本或免费额度云服务（Vercel/Netlify + Render/Railway + Supabase/Neon 等）。
+5) 必须有用户认证、租户隔离、任务实时状态（轮询/WS 预留）、对象存储、数据库。
+6) 新用户可自动初始化个人站点（租户创建、默认配置、默认管理员等）。
+
+
+【现有代码来源与迁移思路】
+原项目（根目录 d:\图片处理程序3.8）包含：
+- main.py / manual_crop_adjust.py：裁剪、圆角处理、PPT 生成（python-pptx）、Pillow/numpy。
+- config.json：裁剪参数、PPT 布局、标签模板样例，以及旧局域网库配置。
+
+迁移思路：
+- 把原来的图像处理链路抽离成后端 service（processor.py/tasks.py），由 Web 任务触发。
+- Web 侧上传改为对象存储（local/supabase），后端记录资产与任务。
+- 前端提供登录/控制台/上传/任务状态页面。
+
+
+============================================================
+【仓库结构】
+工作目录：d:\图片处理程序3.8\web-platform
+
+1) backend/  （FastAPI）
+- app/main.py：应用入口，挂载 API Router，CORS，中间件，local storage 静态挂载。
+- app/api/：路由层
+  - /api/health
+  - /api/auth（注册/登录 token）
+  - /api/tenants（租户 CRUD 简化）
+  - /api/assets（图片资产 CRUD，鉴权与租户隔离）
+  - /api/tasks（任务 CRUD，创建任务后后台执行处理）
+  - /api/uploads（上传接口，保存到对象存储）
+  - /api/admin/provision（管理员一键初始化租户+管理员并写默认配置到存储）
+- app/models/：SQLModel 数据模型
+  - Tenant/User/ImageAsset/ProcessingTask/LabelTemplate
+  - 关系字段使用 sa_relationship=relationship("Model") 显式声明，避免 SQLAlchemy2 与泛型推断冲突。
+  - 注意：ImageAsset 字段 metadata 已改为 meta_json（metadata 是 SQLAlchemy 保留字）。
+- app/db/session.py：AsyncSession（sqlmodel.ext.asyncio.session.AsyncSession）+ engine。
+- app/core/
+  - config.py：Settings（pydantic_settings.BaseSettings）+ CORS + storage 配置等。
+  - security.py：JWT + 密码哈希（已改为 pbkdf2_sha256，避免 bcrypt Windows 兼容与 72 bytes 限制）。
+  - logging.py：日志配置。
+- app/services/
+  - processor.py：从旧程序抽离的核心处理逻辑（Pillow/numpy/python-pptx）
+  - config_loader.py：读取 legacy config.json → 转成 processing settings（裁剪参数、ppt 布局等）
+  - tasks.py：任务执行服务（下载/处理/生成ppt/上传/写回状态），并处理 local 模式下 storage key → 本地路径映射。
+  - storage/
+    - base.py：存储协议
+    - local.py：本地存储（写到 storage_root/key）
+    - supabase.py：Supabase Storage（同步 SDK 用 asyncio.to_thread 包装）
+    - __init__.py：get_storage_backend() 工厂。local root 统一解析为绝对路径。
+  - provisioning/service.py：新租户初始化（创建 tenant+admin，并在存储写默认 config）
+- app/scripts/
+  - init_admin.py：初始化 demo tenant + admin（并自动迁移 metadata→meta_json，最后 dispose engine 保证退出）
+  - smoke_test.py：烟囱测试脚本（登录→上传→创建asset→创建task→轮询任务状态）
+
+2) frontend/  （Next.js）
+- app/layout.tsx：全局布局，包 AuthProvider。
+- app/page.tsx：首页 UI。
+- app/login/page.tsx：登录页（调用 /api/auth/token）
+- app/dashboard/page.tsx：仪表盘（租户切换、任务/资产列表、鉴权重定向）
+- app/dashboard/upload/page.tsx：上传页（/uploads→/assets→/tasks）
+- app/tasks/[taskId]/page.tsx：任务详情占位。
+- src/lib/api.ts：API 封装（自动加 Bearer token，401 自动跳 login；upload 支持 multipart）
+- src/lib/auth.ts：token/tenantId localStorage
+- src/context/AuthContext.tsx：统一认证上下文（login/logout/selectTenant）
+- src/hooks/useTenants.ts/useTasks.ts/useAssets.ts：SWR 数据获取。
+- src/components/TenantSwitcher.tsx：租户选择器。
+
+3) scripts/ （辅助脚本）
+- init_admin.ps1：一键 init_admin（自动 Set-Location backend + PYTHONPATH）
+- run_backend.ps1：一键启动后端（默认 8001 端口；自动 Set-Location backend + PYTHONPATH）
+- health_check.ps1：检查 /api/health。
+
+4) .github/workflows/ （CI）
+- frontend-vercel.yml：推送 main 时触发 vercel --prod（需要 VERCEL_TOKEN secret）。
+- backend-render.yml：推送 main 时 POST Render Deploy Hook（需要 RENDER_DEPLOY_HOOK_URL secret）。
+
+============================================================
+【本次会话中“做了什么 / 增加了什么”详细清单】
+
+A. 后端核心能力
+1) FastAPI 项目骨架搭建：
+- app/main.py + app/api/routes.py + health endpoint。
+
+2) 多租户数据模型（SQLModel）：
+- Tenant/User/ImageAsset/ProcessingTask/LabelTemplate。
+- 修复 SQLAlchemy2/SQLModel 关系推断冲突：所有关系使用 sa_relationship=relationship("Model")。
+- 修复保留字冲突：ImageAsset.metadata → ImageAsset.meta_json。
+
+3) 鉴权与安全（可用版本）：
+- /api/auth/register 注册用户
+- /api/auth/token 登录获取 JWT
+- 业务路由通过 get_current_user/get_current_tenant 强制租户隔离。
+- 密码哈希：bcrypt → pbkdf2_sha256（解决 Windows bcrypt 兼容、72 bytes 限制）。
+
+4) 上传与任务处理链路：
+- /api/uploads：上传文件到存储（local/supabase）。
+- /api/assets：记录图片资产。
+- /api/tasks：创建处理任务并 background task 执行。
+- app/services/tasks.py：执行处理，调用 processor.py（裁剪/圆角/PPT），上传结果并更新 status。
+- local 模式下：把 asset.original_path（storage key）映射到 storage_root/key 的实际路径。
+
+5) 存储抽象：
+- local storage：支持写入与列举。
+- supabase storage：可选依赖，避免缺依赖导致 local 运行失败。
+- storage 目录挂载：/storage 静态访问（local）。
+- storage_local_root 统一解析为绝对路径，避免 uvicorn reload cwd 导致 ./storage 不存在。
+
+6) 自动初始化/自动建站（第一阶段）：
+- app/scripts/init_admin.py：初始化 demo tenant 与 admin。
+- /api/admin/provision：超级管理员一键创建租户+管理员，并在存储写默认 config.json 和 marker。
+
+7) 环境与兼容性修复：
+- config.py：使用 pydantic_settings.BaseSettings 适配 Pydantic v2。
+- schemas：orm_mode → from_attributes（ConfigDict）。
+- 补齐依赖：aiosqlite、email-validator、Pillow、numpy、python-pptx。
+- 修复 pip 安装临时目录磁盘空间不足：通过设置 PIP_CACHE_DIR/TEMP 到 D 盘。
+
+B. 前端核心能力
+1) Next.js 前端骨架：layout/home/dashboard/tasks。
+2) 登录页 /login：调用 /api/auth/token，写入 AuthContext。
+3) Dashboard：租户切换、任务/资产展示、未登录跳转。
+4) Upload：上传文件→创建asset→创建task。
+5) API 客户端与鉴权：自动带 Authorization；401 清理并跳 /login。
+
+C. 部署与自动化
+1) backend/Dockerfile
+2) backend/render.yaml（Render 部署模板）
+3) frontend/vercel.json
+4) GitHub Actions：frontend-vercel.yml + backend-render.yml
+
+D. 文档
+- backend/README.md
+- backend/.env.example
+- frontend/.env.local.example
+
+============================================================
+【当前已知未完全收敛的问题/风险】
+1) smoke_test.py 里 /api/uploads 可能出现 307（FastAPI 末尾斜杠重定向），需要统一：
+   - 要么把 uploads 路由定义为不重定向（把 POST endpoint 改成同时支持 / 与不带 /），
+   - 要么 smoke_test.py/前端统一访问 /api/uploads/。
+2) 任务处理性能与资源：PPT 生成与图片处理在免费云实例可能耗时，需要队列/worker（Celery/RQ）长期化。
+3) 多租户子域名/自定义域名：当前只做到后端“租户初始化 + 默认配置”。真正的 Vercel/Cloudflare 子域自动绑定仍是占位。
+4) 生产数据库：当前默认 SQLite，生产应切 Postgres（Supabase/Neon）。
+
+============================================================
+【未来详细计划（按优先级分阶段）】
+
+阶段 1：本地链路完全跑通（目标：10-30 分钟内可验证）
+1) 修复 uploads 307：
+   - 后端：将 uploads 路由改为 /uploads 和 /uploads/ 都能接收；或关闭 redirect。
+   - 前端：确保 upload 使用正确路径。
+2) smoke_test.py 完整通过：
+   - 登录→上传→创建asset→创建task→task=completed。
+3) uvicorn 启动统一端口脚本（8000/8001），并在 README 写清楚。
+
+阶段 2：云端 MVP 上线（免费额度）
+1) 后端：Render/Railway 部署，环境变量接入。
+2) 前端：Vercel 部署，NEXT_PUBLIC_API_BASE_URL 指向后端。
+3) 存储：
+   - local→supabase storage 或 R2。
+4) 数据库：SQLite→Supabase Postgres。
+
+阶段 3：多租户站点与域名自动化
+1) Cloudflare DNS + Vercel Domain API：
+   - 创建 tenant 时自动加 CNAME/子域。
+2) 在 DB 保存 tenant.domain/slug，并在前端 Host 识别租户。
+
+阶段 4：任务系统生产化
+1) 引入 Redis 队列 + Worker（RQ/Celery）
+2) WebSocket/Server-Sent Events 推送任务状态。
+3) 限流与配额（每租户存储/任务数）。
+
+阶段 5：完善产品化能力
+- 模板管理、标签库管理、裁剪参数可视化编辑（替代 tk GUI）、审计日志、管理后台。
+
+============================================================
+【给“空白 AI/新接手者”的快速操作指南】
+
+1) 初始化管理员（本地）
+- 运行：web-platform\scripts\init_admin.ps1
+
+2) 启动后端（本地）
+- 运行：
+  $env:BACKEND_PORT=8001
+  web-platform\scripts\run_backend.ps1
+
+3) health 检查
+- 运行：web-platform\scripts\health_check.ps1
+
+4) 前端
+- 需要 Node.js LTS
+- 配置 frontend/.env.local
+- pnpm dev
+
+5) 常见坑
+- 若提示 No module named app：说明 cwd 或 PYTHONPATH 不对，用 scripts 里的 ps1 启动。
+- 若 pip 下载失败/临时盘满：设置 TEMP/TMP/PIP_CACHE_DIR 到 D 盘。
+- 若 sqlite schema 旧列 metadata：脚本已自动迁移。
+
+（以上说明文件为交接用，后续建议把 README 与部署文档进一步完善）

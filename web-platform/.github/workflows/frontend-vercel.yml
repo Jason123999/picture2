@@ -1,0 +1,29 @@
+name: Deploy Frontend to Vercel
+
+on:
+  push:
+    paths:
+      - "web-platform/frontend/**"
+      - "web-platform/.github/workflows/frontend-vercel.yml"
+    branches: ["main"]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Vercel CLI
+        run: npm i -g vercel
+
+      - name: Deploy
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          cd web-platform/frontend
+          vercel --prod --token "$VERCEL_TOKEN" --yes
