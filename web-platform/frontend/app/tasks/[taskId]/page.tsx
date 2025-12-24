@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 type TaskDetailsProps = {
-  params: { taskId: string };
+  params: Promise<{ taskId: string }>;
 };
 
 const mockEvents = [
@@ -12,7 +12,8 @@ const mockEvents = [
   { time: "14:36", message: "生成 PPT 幻灯片" },
 ];
 
-export default function TaskDetailsPage({ params }: TaskDetailsProps) {
+export default async function TaskDetailsPage({ params }: TaskDetailsProps) {
+  const { taskId } = await params;
   return (
     <main className="mx-auto min-h-screen max-w-5xl px-6 py-12">
       <Link
@@ -23,7 +24,7 @@ export default function TaskDetailsPage({ params }: TaskDetailsProps) {
       </Link>
       <header className="mt-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-white">任务 #{params.taskId}</h1>
+          <h1 className="text-3xl font-bold text-white">任务 #{taskId}</h1>
           <p className="mt-2 text-sm text-slate-300">
             实时查看处理进度、输出结果与错误日志。
           </p>
